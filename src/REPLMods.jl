@@ -1,6 +1,9 @@
 module REPLMods
 
-import Base: LineEdit, REPL, REPLCompletions
+import REPL
+
+REPLCompletions = REPL.REPLCompletions
+LineEdit = REPL.LineEdit
 
 # TODO: we should probably pop the REPL off `mirepl.interface.modes`
 #       and somehow fix up main_mode.keymap_dict. Not quite sure how
@@ -10,13 +13,13 @@ import Base: LineEdit, REPL, REPLCompletions
 #       we present a list of the modules we already have prompts for and the
 #       user can select which one he wants.
 
-type ModuleREPLCompletionProvider <: REPL.CompletionProvider
+mutable struct ModuleREPLCompletionProvider <: REPL.CompletionProvider
     r::REPL.LineEditREPL
     mod::Module
 end
 
 function REPL.complete_line(c::ModuleREPLCompletionProvider, s)
-    partial = string(c.mod, ".", REPL.bytestring_beforecursor(s.input_buffer))
+    partial = string(c.mod, ".", REPL.beforecursor(s.input_buffer))
     full = string(c.mod, ".", LineEdit.input_string(s))
     ret, range, should_complete = REPLCompletions.completions(full, endof(partial))
     return ret, partial[range], should_complete
@@ -26,24 +29,23 @@ function build_module_repl(mod::Module; key::Char='.',
                            color::AbstractString=Base.text_colors[:cyan],
                            prompt::AbstractString=string(mod, "> "))
     # extract REPL and  modal interface, if any
-    mirepl = isdefined(Base.active_repl,:mi) ? Base.active_repl.mi :
-                                               Base.active_repl
+    mirepl = isdefined(Base.active_repl,:mi) ? Base.active_repl.mi : Base.active_repl
     repl = Base.active_repl
     main_mode = mirepl.interface.modes[1]
     hp = main_mode.hist
     replc = ModuleREPLCompletionProvider(repl, mod)
 
     # if we already have a prompt for this module, just return
-    if haskey(hp.mode_mapping, symbol("_", mod))
+    if haskey(hp.mode_mapping, Symbol("_", mod))
         return nothing
     end
 
     # build prompt
     mod_prompt = LineEdit.Prompt(prompt;
-        prompt_prefix = color,
-        prompt_suffix = "\e[1m",
-        keymap_func_data = repl,
-        complete = replc)
+                                 prompt_prefix = color,
+                                 prompt_suffix = "\e[1m",
+                                 keymap_func_data = repl,
+                                 complete = replc)
 
     # on_done needs to eval into `mod` instead of into Main.
     # also keeps the `mod_prompt` active
@@ -59,7 +61,7 @@ function build_module_repl(mod::Module; key::Char='.',
     mod_prompt.hist = hp
 
     # Add keymap so we can get into our module prompt
-    const mod_keymap = Dict{Any,Any}(
+    mod_keymap = Dict{Any,Any}(
         key => function (s,args...)
             if isempty(s) || position(LineEdit.buffer(s)) == 0
                 buf = copy(LineEdit.buffer(s))
